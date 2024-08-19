@@ -1,0 +1,37 @@
+{
+  "name": "mc-player-viewer",
+  "version": "1.0.0",
+  "description": "Minecraft player viewer",
+  "main": "index.js",
+  "scripts": {
+    "get-skins": "node --env-file=.env .",
+    "help": "node . -h"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.4",
+    "better-queue": "^3.8.12",
+    "clear": "^0.1.0",
+    "clui": "^0.3.6",
+    "clui-progressbar": "^0.1.1",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "glob": "^11.0.0",
+    "got": "^11.1.3",
+    "log4js": "^6.9.1",
+    "prettier": "^3.3.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.0",
+    "@types/better-queue": "^3.8.6",
+    "@types/clear": "^0.1.4",
+    "@types/clui": "^0.3.4",
+    "@types/eslint": "^9.6.0",
+    "eslint": "^9.9.0",
+    "globals": "^15.9.0"
+  },
+  "bin": {
+    "minesteal": "index.js"
+  }
+}
