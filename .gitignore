@@ -3,4 +3,7 @@ node_modules
 .history
 package-lock.json
 .env
-database.sqlite3
+.sqlite3
+.sql
+.db
+.sqlite
