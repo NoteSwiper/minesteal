@@ -1,38 +1,20 @@
-const got = require('got');
+const { extend } = require('got');
 const Queue = require('better-queue');
-const { randomUUID } = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const log4js = require('log4js');
+const { randomFillSync, randomUUID } = require('crypto');
+const { existsSync, mkdirSync, writeFile } = require('fs');
+const { resolve, join } = require('path');
+const { configure, getLogger } = require('log4js');
 const { Command } = require('commander');
+const { config } = require('dotenv');
+const { Database} = require("sqlite3");
 const program = new Command();
-const clui = require('clui');
-const dotenv = require('dotenv');
-let lenlist = Array(32).fill(0);
-
-let isd = false;
-
-if (fs.existsSync('.env')) {
-	isd = true;
-	dotenv.config();
-} else {
-	isd = false;
-}
+let isd = (existsSync('.env')) ? true : false; isd && config();
 const VERSIONAPP = '1.0.0';
-
+let af = false;
 program
 	.name('minesteal')
 	.description('A program for getting mineskin skins.')
 	.version(VERSIONAPP, '-v, --version', 'outputs the current version');
-
-/*
-batchSize: 32,
-    maxRetries: 32,
-    afterProcessDelay: 500,
-    concurrent: 3,
-    retryDelay: 2500,
-*/
-
 program
 	.option(
 		'-p, --pages <number>',
@@ -60,12 +42,17 @@ program
 	.option(
 		'-s, --path <path>',
 		'set save directory for skins',
-		path.resolve(isd === true ? process.env.SAVE_DIR : 'skins/mineskin/')
+		resolve(isd === true ? process.env.SAVE_DIR : 'skins/mineskin/')
+	)
+	.option(
+		'-B, --dbpath <path>',
+		'set database file path for saving the skin info,',
+		resolve('./database.sqlite3')
 	)
 	.option(
 		'-o, --logpath <path>',
 		'set log directory for reporting issue [experimental]',
-		path.resolve(__dirname, 'logs/')
+		resolve(__dirname, 'logs/')
 	)
 	.option(
 		'-A, --apikey <key>',
@@ -77,16 +64,19 @@ program.parse();
 
 const opts = program.opts();
 
-const downloadFolder = path.resolve(opts.path);
+const downloadFolder = resolve(opts.path);
+const db = new Database(join(opts.dbpath), (err) => {
+	(err) && console.error(err.message);
+});
 
 const PAGES_TO_LOAD = parseFloat(opts.pages);
 const LOAD_DELAY = parseInt(opts.loaddelay);
 /* const API_K = `opts.apikey` */
-log4js.configure({
+configure({
 	appenders: {
 		out: {
 			type: 'file',
-			filename: path.resolve(opts.logpath, 'output.log'),
+			filename: resolve(opts.logpath, 'output.log'),
 			maxLogSize: 10485760,
 			backups: 10,
 			compress: true,
@@ -94,7 +84,7 @@ log4js.configure({
 		},
 		multi: {
 			type: 'multiFile',
-			base: path.resolve(opts.logpath),
+			base: resolve(opts.logpath),
 			property: 'categoryName',
 			extension: '.log',
 			maxLogSize: 10485760,
@@ -107,25 +97,25 @@ log4js.configure({
 		default: { appenders: ['multi', 'out'], level: 'trace' },
 	},
 });
-const logger = log4js.getLogger();
-const corelog = log4js.getLogger('core');
-const datalog = log4js.getLogger('data');
-const queuelog = log4js.getLogger('queue');
+const logger = getLogger();
+const corelog = getLogger('core');
+const datalog = getLogger('data');
+const queuelog = getLogger('queue');
 
 corelog.trace('Log4JS Logger initialized');
 corelog.trace(`minesteal v${VERSIONAPP}`);
 
 corelog.trace('Checking download path exists...');
-if (!fs.existsSync(downloadFolder)) {
+if (!existsSync(downloadFolder)) {
 	corelog.trace(`Path "${downloadFolder}" doesn't exists. creating...`);
-	fs.mkdirSync(downloadFolder);
+	mkdirSync(downloadFolder);
 }
-if (!fs.existsSync(opts.logpath)) {
+if (!existsSync(opts.logpath)) {
 	corelog.trace(`Path "${opts.logpath}" doesn't exists. creating...`);
-	fs.mkdirSync(opts.logpath);
+	mkdirSync(opts.logpath);
 }
 
-const instance = got.extend({
+const instance = extend({
 	prefixUrl: 'https://api.mineskin.org',
 	headers: {
 		'user-agent': 'MCPV2/1.2',
@@ -133,7 +123,7 @@ const instance = got.extend({
 	resolveBodyOnly: true,
 	throwHttpErrors: false,
 });
-const instance2 = got.extend({
+const instance2 = extend({
 	headers: { 'user-agent': 'MCPV2/1.2' },
 	resolveBodyOnly: true,
 	throwHttpErrors: false,
@@ -141,25 +131,12 @@ const instance2 = got.extend({
 
 //const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-async function sendData(taskid, taskstatus, taskmessage, taskstats) {
-	const json = {
-		id: taskid,
-		status: taskstatus,
-		message: taskmessage,
-		stats: taskstats ?? null,
-	};
+const sendData = async (taskid, taskstatus, taskmessage, taskstats) => {
+	const json = {id: taskid, status: taskstatus,	message: taskmessage, stats: taskstats ?? null, };
 	datalog.debug(JSON.stringify(json));
 }
 
-let PROCESSED_BATCHES = 0;
-let PROCESSED_TASKS = 0;
-let PROCESSED_PROCESSES = 0;
-/*
-let CURRENT_BATCHES = 0
-let CURRENT_TASKS = 0
-let CURRENT_PROCESSES = 0*/
-
-q = new Queue(
+var q = new Queue(
 	function (tasks, cb) {
 		//const current = this
 		queuelog.debug(`### BATCH QUEUE START ###`);
@@ -174,8 +151,8 @@ q = new Queue(
 			try {
 				instance2(task.data.url, { responseType: 'buffer' }).then(
 					(skin) => {
-						fs.writeFile(
-							path.join(downloadFolder, `${skinId}.png`),
+						writeFile(
+							join(downloadFolder, `${skinId}.png`),
 							skin,
 							(err) => {
 								if (err) {
@@ -185,8 +162,25 @@ q = new Queue(
 									throw err;
 								}
 								queuelog.trace(
-									`Image saved: ${path.join(downloadFolder, skinId + '.png')}`
+									`Image saved: ${join(downloadFolder, skinId + '.png')}`
 								);
+								var aa = randomUUID();
+								db.serialize(() => {
+									db.run(
+										'CREATE TABLE IF NOT EXISTS "mineskin" ("id"	INTEGER,"name"	TEXT,"suid"	TEXT,"hash"	TEXT,"uuid"	TEXT,"time"	NUMERIC,"path"	TEXT,"version"	TEXT,CONSTRAINT "uniq" PRIMARY KEY("id"));'
+									);
+									db.run(
+										'INSERT OR IGNORE INTO mineskin VALUES (?,?,?,?,?,?,?,?)',
+										task.data.id,
+										task.data.name ?? randomUUID(),
+										task.data.skinUuid ?? aa,
+										skinId ?? Array.from(randomFillSync(new Uint8Array(16))).map((n)=>5[n%'abcdef0123456789'.length]).join(''),
+										task.data.uuid ?? aa,
+										task.data.time,
+										join(downloadFolder, `${skinId}.png`),
+										VERSIONAPP
+									);
+								});
 								cb(null, task.uuid);
 							}
 						);
@@ -196,7 +190,6 @@ q = new Queue(
 				console.error(`${err}\n`);
 				queuelog.error(err);
 			}
-			PROCESSED_PROCESSES++;
 			queuelog.debug(`### PREVIOUS_QUEUE_TASK: ${task.uuid} ###`);
 		});
 		queuelog.debug(`### BATCH QUEUE ENDS ###`);
@@ -211,8 +204,8 @@ q = new Queue(
 		filter: function (input, cb) {
 			queuelog.trace(`Queue filtering process`);
 			if (
-				fs.existsSync(
-					path.join(
+				existsSync(
+					join(
 						downloadFolder,
 						`${input.data.url.replace(
 							/https?:\/\/textures\.minecraft\.net\/texture\//gm,
@@ -234,6 +227,7 @@ q = new Queue(
 
 let REMAINING_SKINS = 0;
 let PROCESSING_SKINS = 0;
+let STATISTICS = [0, 0];
 
 q.on('task_queued', function (task_id) {
 	REMAINING_SKINS++;
@@ -250,7 +244,7 @@ q.on('task_started', function (task_id) {
 q.on('task_finish', function (task_id, result, stats) {
 	PROCESSING_SKINS--;
 	sendData(task_id, 'success', result, stats);
-	PROCESSED_TASKS++;
+	STATISTICS[1]++;
 });
 q.on('task_failed', function (task_id, error, stats) {
 	PROCESSING_SKINS--;
@@ -262,7 +256,7 @@ q.on('task_progress', function (task_id, c, t) {
 	sendData(task_id, 'progress', null, { current: c, total: t });
 });
 q.on('batch_finish', function () {
-	PROCESSED_BATCHES++;
+	STATISTICS[0]++;
 });
 
 process.stdout.write(
@@ -270,12 +264,6 @@ process.stdout.write(
 		LOAD_DELAY / 1000
 	} seconds to warming up the process...\n\n\n\n`
 );
-const ob = new clui.LineBuffer({
-	x: 0,
-	y: 0,
-	width: 'console',
-	height: 'console',
-});
 logger.info(
 	`Please wait for ${LOAD_DELAY / 1000} seconds to warming up the process...`
 );
@@ -307,11 +295,6 @@ setInterval(async function () {
 			});
 	}
 }, LOAD_DELAY);
-
-let bpslist = lenlist;
-let tpslist = lenlist;
-let ppslist = lenlist;
-
 const clearLines = async (n) => {
 	for (let i = 0; i < n; i++) {
 		const y = i === 0 ? null : -1;
@@ -327,3 +310,11 @@ setInterval(async function () {
 		`SKINS: ${stats.total} stored / ${REMAINING_SKINS} in-queue / ${PROCESSING_SKINS} processing`
 	);
 }, 50);
+process.on('beforeExit', (code) => {
+	if (!af) return;
+	af = true;
+	setTimeout(() => {
+		db.close();
+		console.log('Process exit: ', code);
+	})
+});
