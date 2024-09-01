@@ -7,3 +7,6 @@ package-lock.json
 .sql
 .db
 .sqlite
+.sqlite3
+.db
+.sql

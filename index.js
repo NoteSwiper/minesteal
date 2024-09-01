@@ -141,6 +141,7 @@ var q = new Queue(
 		//const current = this
 		queuelog.debug(`### BATCH QUEUE START ###`);
 		tasks.forEach((task) => {
+			
 			queuelog.debug(`### CURRENT_QUEUE_TASK: ${task.uuid} ###`);
 			const urlid = task.data.url;
 			const skinId = urlid.replace(
@@ -151,6 +152,7 @@ var q = new Queue(
 			try {
 				instance2(task.data.url, { responseType: 'buffer' }).then(
 					(skin) => {
+						
 						writeFile(
 							join(downloadFolder, `${skinId}.png`),
 							skin,
@@ -159,6 +161,7 @@ var q = new Queue(
 									queuelog.error(
 										`Error occured while processing queue task: ${err}`
 									);
+									
 									throw err;
 								}
 								queuelog.trace(
@@ -307,7 +310,7 @@ setInterval(async function () {
 	clearLines(1);
 	var stats = q.getStats();
 	process.stdout.write(
-		`SKINS: ${stats.total} stored / ${REMAINING_SKINS} in-queue / ${PROCESSING_SKINS} processing`
+		`SKINS: ${stats.total} stored / ${REMAINING_SKINS} in-queue / ${PROCESSING_SKINS}/${opts.concurrent} in-processing`
 	);
 }, 50);
 process.on('beforeExit', (code) => {
